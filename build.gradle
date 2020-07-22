@@ -1,7 +1,5 @@
 plugins {
-    id 'maven'
     id 'java-library'
-    id "edu.wpi.first.GradleRIO" version "2020.3.2"
 }
 
 repositories {
@@ -9,6 +7,5 @@ repositories {
 }
 
 dependencies {
-    api wpi.deps.wpilib()
-    api wpi.deps.vendor.java()
+
 }

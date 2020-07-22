@@ -1,7 +1,7 @@
 package org.BotsnBrews.CANLogger;
 
 import java.time.LocalDateTime;
-import edu.wpi.first.wpilibj.CAN;
+//import edu.wpi.first.wpilibj.CAN;
 
 public class CANLogger {
 
@@ -9,7 +9,7 @@ public class CANLogger {
     private static final int kAPIStopLogger = 0;
     private static final int kAPIStartLogger = 1;
    
-    private CAN mCanLogger;
+    //private CAN mCanLogger;
     private LocalDateTime mLocalDateTime;
     private byte[] mFrameData = {0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -17,7 +17,7 @@ public class CANLogger {
     * This method will stop the CAN logger.
     */    
     public void StopLogging () {
-        mCanLogger.writePacket( mFrameData, kAPIStopLogger );
+        //mCanLogger.writePacket( mFrameData, kAPIStopLogger );
     }
 
     /**
@@ -32,14 +32,14 @@ public class CANLogger {
         mFrameData[3] = (byte) mLocalDateTime.getHour();
         mFrameData[4] = (byte) mLocalDateTime.getMinute();
         mFrameData[5] = (byte) mLocalDateTime.getSecond();
-        mCanLogger.writePacket( mFrameData, kAPIStartLogger );
+        //mCanLogger.writePacket( mFrameData, kAPIStartLogger );
     }
 
     /**
     * This is the CANLogger class consructor.
     */    
     public CANLogger () {
-        mCanLogger = new CAN( kDeviceId );
+        //mCanLogger = new CAN( kDeviceId );
     }
 
 }
