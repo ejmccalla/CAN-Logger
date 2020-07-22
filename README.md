@@ -17,4 +17,28 @@ Pre-built Teensy [images](https://github.com/ejmccalla/CAN-Logger/tree/master/sr
 
 ## FRC Robot
 
+To use the Java CANLogger class, which allows robot code to interface with the CANLogger hardware, add the folling to the robot projects build.gradle file:
 
+* repositories {
+    jcenter()
+    maven { url "https://jitpack.io" }
+}
+
+Also, add the following line to the end of the dependencies block in the build.gradle file:
+
+* compile 'com.github.ejmccalla:CAN-Logger:v1.0'
+
+Import the class by adding the following to your robot code:
+
+* import org.BotsnBrews.CANLogger.CANLogger;
+
+This class has 2 methods: a method which will start recording CAN-bus traffic and a method which stops recording.  First, create a CANLogger object by doing the following:
+
+* CANLogger mCANLogger = new CANLogger();
+
+Now, both methods can be run with the following:
+
+* mCANLogger.StartLogging();
+* mCANLogger.StopLogging();
+
+The logging can be started/stopped multiple times per power cycle.  Each start command will create a new file on the micro-SD card with a name which follows the "YYYY-MM-DD:HH-MM-SS".bin naming convention.
