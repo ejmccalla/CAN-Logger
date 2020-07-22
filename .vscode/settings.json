@@ -12,5 +12,6 @@
         "sstream": "cpp",
         "streambuf": "cpp"
     },
-    "java.dependency.packagePresentation": "flat"
+    "java.dependency.packagePresentation": "flat",
+    "java.configuration.updateBuildConfiguration": "automatic"
 }
