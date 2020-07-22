@@ -1,10 +1,6 @@
 plugins {
     id 'java-library'
-    id "edu.wpi.first.GradleRIO" version "2020.3.2" apply false
-}
-
-allprojects {
-    apply plugin: "edu.wpi.first.GradleRIO"
+    id "edu.wpi.first.GradleRIO" version "2020.3.2"
 }
 
 repositories {
