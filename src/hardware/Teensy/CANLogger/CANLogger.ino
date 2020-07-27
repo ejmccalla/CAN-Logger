@@ -66,6 +66,8 @@
 // Uncomment the define below to have debug messages sent out to the USB COM port
 #define DEBUG
 
+#define LED 13
+
 // Bit definitions for failures
 #define SD_START_FAILED          ( BIT0 )
 #define SD_FILE_OPEN_FAILED      ( BIT1 )
@@ -254,23 +256,50 @@ THD_FUNCTION( CT, arg ) {                                                 // Dec
   }
 }
 
+//------------------------------------------------------------------------------
+void FlashErrorCode ( uint8_t ec ) {
+  digitalWrite( LED, LOW );
+  while ( true ) {
+    delay(4000);
+    for (uint8_t i = 0; i < 8; i++) {
+      if ( ( ec >> i) & 0x1 ) {
+        digitalWrite( LED, HIGH );
+        delay(2000);                // Long for 1
+        digitalWrite( LED, LOW );
+        delay(1000);
+      } else {
+        digitalWrite( LED, HIGH );
+        delay(1000);                // Short for 0
+        digitalWrite( LED, LOW );
+        delay(1000);
+      }
+    }
+  }   
+}
+
 
 //------------------------------------------------------------------------------
 void chStartup() {
-  chThdCreateStatic( WACT, sizeof(WACT), NORMALPRIO, CT, NULL );          // Startup the CAN thread  
+  chThdCreateStatic( WACT, sizeof(WACT), NORMALPRIO, CT, NULL );          // Startup the CAN thread
+  digitalWrite( LED, HIGH );                                              // Turn on the LED to indicate boot is complete
 }
 
 
 //------------------------------------------------------------------------------
 void setup ( void ) {
-  #ifdef DEBUG
-    Serial.begin( 1000000 );
-    while ( !Serial ) {}                                                  // Wait for USB Serial COMs
-  #endif
+  pinMode( LED, OUTPUT );                                                 // Setup the LED output
+  digitalWrite( LED, LOW );
+  
+  Serial.begin( 9600 );
+  while ( !Serial ) {}                                                    // Wait for USB Serial COMs
+  
 
   if ( !sd.begin() ) {                                                    // Startup the SD interface
+    #ifdef DEBUG
+      Serial.println( F( "Setup: Failed to initialize SD" ) );
+    #endif    
     sdFailBitMask |= SD_START_FAILED;
-    while ( true ) {}
+    FlashErrorCode( sdFailBitMask );                                      // Does not return
   }
   #ifdef DEBUG
     Serial.println( F( "Setup: Initialized SD Card Interface" ) );
@@ -306,12 +335,12 @@ void loop () {
         Serial.println( F( "Loop: Received for start command" ) );
         Serial.println( F( fileName ) );
       #endif
-      if ( !file.open( fileName, O_CREAT | O_WRITE | O_TRUNC ) ) {              // The start command sets the filename
+      if ( !file.open( fileName, O_CREAT | O_WRITE | O_TRUNC ) ) {            // The start command sets the filename
         sdFailBitMask |= SD_FILE_OPEN_FAILED;
         #ifdef DEBUG
           Serial.println( F( "Loop: SD file open failed" ) );
         #endif
-        while ( true ) {} 
+        FlashErrorCode( sdFailBitMask );                                      // Does not return
       }
       sdState = LOGGING;
       break;
@@ -326,7 +355,7 @@ void loop () {
               #ifdef DEBUG
                 Serial.println( F( "Loop: SD write failed" ) );
               #endif               
-              while ( true ) {} 
+              FlashErrorCode( sdFailBitMask );                                      // Does not return
           }
           chSemSignal( &fifoSpace );                                            // Release the FIFO block
           fifoTail = fifoTail < ( kFifoSize - 1 ) ? fifoTail + 1 : 0;           // Advance FIFO tail index
@@ -340,7 +369,7 @@ void loop () {
         #ifdef DEBUG
           Serial.println( F( "Loop: SD file close failed" ) );
         #endif
-        while ( true ) {} 
+        FlashErrorCode( sdFailBitMask );                                      // Does not return 
       }
       sdState = STOPPED;
       break;

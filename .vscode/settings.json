@@ -10,7 +10,13 @@
         "new": "cpp",
         "ostream": "cpp",
         "sstream": "cpp",
-        "streambuf": "cpp"
+        "streambuf": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "random": "cpp"
     },
     "java.dependency.packagePresentation": "flat",
     "java.configuration.updateBuildConfiguration": "automatic"

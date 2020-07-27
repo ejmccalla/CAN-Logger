@@ -8,7 +8,8 @@
           "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\ChRt\\**",
           "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\FlexCAN_T4\\**",
           "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\SdFat\\**",
-          "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\SPI\\**"
+          "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\SPI\\**",
+          "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr\\libraries\\SerialTransfer\\**"
         ],
         "forcedInclude": [],
         "defines": [
