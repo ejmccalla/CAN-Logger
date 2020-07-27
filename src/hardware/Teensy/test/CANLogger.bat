@@ -1,5 +1,4 @@
-set scriptpath=C:\Users\ejmcc\Documents\Git Projects\CAN-Logger\src\hardware\Teensy\test
-set pythonpath=C:\Users\ejmcc\AppData\Local\Programs\Python\Python38-32
-
-"%pythonpath%\python.exe" "%scriptpath%\test.py"
+set scriptpath=C:\Users\ejmcc\GIT Projects\CAN-Logger\src\hardware\Teensy\test
+FOR /f %%p in ('where python') do SET PYTHONPATH=%%p
+%PYTHONPATH% "%scriptpath%\test.py"
 pause

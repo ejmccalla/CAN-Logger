@@ -14,6 +14,9 @@ size_t bytesRead;
 char cmdBuf[ cmdBufSz ];
 const char startCmd[] = "START";
 
+const uint8_t fileNameSize= 24;         // Filename format YYYY-MM-DD_HH:MM:SS.bin
+char fileName[fileNameSize];
+
 //------------------------------------------------------------------------------
 void setup() {
   Serial.begin(9600);
@@ -26,14 +29,37 @@ void setup() {
 //------------------------------------------------------------------------------
 void loop() {
 
+  // Wait for the start comand
   bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-  if ( strcmp( cmdBuf, startCmd ) == 0 ) {  // Serial COM is asking to transfer file
+  if ( strcmp( cmdBuf, startCmd ) == 0 ) {
     if (!root.open("/")) {
       sd.errorHalt("open root failed");
     }
 
     while ( file.openNext( &root, O_RDONLY ) ) {
       if ( !file.isDir() ) {
+
+        // Send the file name without the null character
+        file.getName( fileName, (size_t) fileNameSize );
+        Serial.write( fileName, (size_t) fileNameSize - 1 );
+        
+        // Wait to start the next phase
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        while ( strcmp( cmdBuf, startCmd ) != 0 ) {
+          delay( 1000 );
+          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        }
+
+        // Send the file size
+        file.printFileSize( &Serial );
+
+        // Wait to start the next phase
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        while ( strcmp( cmdBuf, startCmd ) != 0 ) {
+          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        }
+
+        // Transfer the file
         bufIdx = 0;
         while ( file.available() ) {
           buf[bufIdx] = file.read();
@@ -47,7 +73,7 @@ void loop() {
       }
       file.close();
     }
-
+    while (true) {}
   } else {
     delay( 1000 );
   }
