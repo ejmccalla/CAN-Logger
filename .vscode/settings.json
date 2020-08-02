@@ -19,5 +19,6 @@
         "random": "cpp"
     },
     "java.dependency.packagePresentation": "flat",
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "python.autoComplete.extraPaths": ["./src/CANDecoder/"]
 }

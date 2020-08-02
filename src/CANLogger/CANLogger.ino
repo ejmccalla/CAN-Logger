@@ -78,6 +78,9 @@
 
 SdFatSdioEX sd;                                           // The micro SD card object
 File file;                                                // File object to write data to the SD card
+SdFile root;                                              // SD file object to read the root of the FS
+SdFile txferFile;                                         // SD file object of the file to be transferred
+
 #ifdef USE_CAN0                                           // The CAN-bus oject, Teensy 3.6 currently
   FlexCAN_T4<CAN0, RX_SIZE_256, TX_SIZE_16> CanBus;       // supports 2 buses via the hardware above
 #else
@@ -91,6 +94,8 @@ const uint16_t kStartLogging = 1;                         // CAN frame start log
 const uint16_t kRequestStatus = 16;                       // CAN request data frame command API group/index
 const size_t kBlockSize = 32;                             // Block size, the number of CAN messages
 const size_t kFifoSize = 32;                              // FIFO size, the number of blocks
+const char kStartCmd[] = "START";                         // USB serial incoming START command
+const uint8_t kFileNameSize= 24;                          // Filename format YYYY-MM-DD_HH:MM:SS.bin
 
 typedef struct save_CAN_message_t {                       // 16 byte CAN message to save
   uint32_t arbId = 0;
@@ -127,6 +132,13 @@ uint8_t sdFailBitMask = 0;                                // Failing bitmask for
 uint8_t canFailBitMask = 0;                               // Failing bitmask for the CAN thread
 
 char fileName[] = "2000-00-00_00-00-00.bin";              // Filename format YYYY-MM-DD_HH:MM:SS
+char txferFileName[kFileNameSize];                        // Filename of file to transfer
+
+const uint8_t cmdBufSz = 6;                               // USB serial incoming command buffer size
+char cmdBuf[ cmdBufSz ];                                  // USB serial incoming command buffer
+size_t bytesRead;                                         // USB serial incoming bytes read
+uint16_t txferBufIdx;                                     // USB serial outgoing buffer index
+uint8_t txferBuf[ 16 * kBlockSize ];                      // USB serial outgoing buffer
 
 SEMAPHORE_DECL ( startLogging, 0 );                       // Used to signal start of logging
 SEMAPHORE_DECL ( stopLogging, 0 );                        // Used to signal logging is finished
@@ -183,7 +195,7 @@ void processFrame ( const CAN_message_t &frame ) {
         fifoOverrun = 0;                                                  // overrun count to 0
       }      
       break;
-	
+  
     case LOGGING:
       if ( ( ( ( frame.id >> 16 ) & 0xFF ) == kTeamNumber ) &             // Check for the stop logging command
            ( ( ( frame.id >> 24 ) & 0x1F ) == kDeviceType ) &             // The data in the partially filled block
@@ -277,23 +289,87 @@ void FlashErrorCode ( uint8_t ec ) {
   }   
 }
 
+//------------------------------------------------------------------------------
+void TransferLogs ( void ) {
+  if (!root.open("/")) {
+    sd.errorHalt("open root failed");
+  }
+
+  uint8_t alreadyHaveFileName = 1;
+  uint8_t ledState = HIGH;
+  uint8_t blockTxfrCnt = 0;
+  while ( txferFile.openNext( &root, O_RDONLY ) ) {
+    if ( !txferFile.isDir() ) {
+
+      // Send the name without the null character
+      if ( !alreadyHaveFileName ) {
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        while ( strcmp( cmdBuf, kStartCmd ) != 0 ) {
+          delay( 100 );
+          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        }
+        alreadyHaveFileName = 0;       
+      }
+      txferFile.getName( txferFileName, (size_t) kFileNameSize );
+      Serial.write( txferFileName, (size_t) kFileNameSize - 1 );
+
+      // Send the size when requested
+      bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+      while ( strcmp( cmdBuf, kStartCmd ) != 0 ) {
+        delay( 100 );
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+      }        
+      txferFile.printFileSize( &Serial );
+
+      // Send the file when requested
+      bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+      while ( strcmp( cmdBuf, kStartCmd ) != 0 ) {
+        delay( 100 );
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+      }
+      txferBufIdx = 0;
+      while ( txferFile.available() ) {
+        txferBuf[ txferBufIdx ] = txferFile.read();
+        txferBufIdx++;
+        if ( txferBufIdx == ( 16 * kBlockSize ) ) {
+          delay (10);
+          Serial.write( txferBuf, (size_t) ( 16 * kBlockSize ) );
+          txferBufIdx = 0;
+          blockTxfrCnt++;
+          if ( ( ledState == LOW ) & ( blockTxfrCnt == 2 ) ) {
+            digitalWrite( LED, HIGH );
+            ledState = HIGH;
+            blockTxfrCnt = 0;
+          } else if ( ( ledState == HIGH ) & ( blockTxfrCnt == 2 ) ) {
+            digitalWrite( LED, LOW );
+            ledState = LOW;
+            blockTxfrCnt = 0;
+          }
+        }
+      }
+      digitalWrite( LED, HIGH );
+      ledState = HIGH;
+    }
+    txferFile.close();
+  }
+  root.close();
+  delay( 4000 );  // The PC-side will timeout after 2 seconds and stop sending requests for files
+  Serial.clear();
+}
 
 //------------------------------------------------------------------------------
 void chStartup() {
   chThdCreateStatic( WACT, sizeof(WACT), NORMALPRIO, CT, NULL );          // Startup the CAN thread
-  digitalWrite( LED, HIGH );                                              // Turn on the LED to indicate boot is complete
 }
 
 
 //------------------------------------------------------------------------------
 void setup ( void ) {
   pinMode( LED, OUTPUT );                                                 // Setup the LED output
-  digitalWrite( LED, LOW );
   
   Serial.begin( 9600 );
-  while ( !Serial ) {}                                                    // Wait for USB Serial COMs
+  //while ( !Serial ) {}                                                    // Wait for USB Serial COMs
   
-
   if ( !sd.begin() ) {                                                    // Startup the SD interface
     #ifdef DEBUG
       Serial.println( F( "Setup: Failed to initialize SD" ) );
@@ -315,6 +391,8 @@ void setup ( void ) {
     Serial.println( F( "Setup: Initialized CAN Interface" ) );
   #endif
 
+  digitalWrite( LED, HIGH );
+
   chBegin( chStartup );                                                   // Start kernel - loop() becomes main thread
   while (true) {}                                                         // chBegin() resets stacks and should never return
 }
@@ -322,7 +400,7 @@ void setup ( void ) {
 
 //------------------------------------------------------------------------------
 void loop () {
-  
+
   switch ( sdState ) {
 
     case STOPPED:
@@ -330,7 +408,12 @@ void loop () {
       #ifdef DEBUG
         Serial.println( F( "Loop: Waiting for start command" ) );
       #endif
-      while ( chSemWaitTimeout( &startLogging, TIME_IMMEDIATE ) != MSG_OK ) {}  // Wait until a start logging command is received
+      while ( chSemWaitTimeout( &startLogging, TIME_IMMEDIATE ) != MSG_OK ) { // Wait until a start logging command is received
+        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+        if ( ( (uint8_t) bytesRead == cmdBufSz ) & ( strcmp( cmdBuf, kStartCmd ) == 0 ) ) {  // Looks like the Teensy is connected to a PC looking to download files
+          TransferLogs();
+        }
+      }
       #ifdef DEBUG
         Serial.println( F( "Loop: Received for start command" ) );
         Serial.println( F( fileName ) );
@@ -344,7 +427,7 @@ void loop () {
       }
       sdState = LOGGING;
       break;
-	
+  
     case LOGGING:
 
       while ( chSemWaitTimeout( &stopLogging, TIME_IMMEDIATE ) != MSG_OK ) {    // Wait until a stop logging command is received
