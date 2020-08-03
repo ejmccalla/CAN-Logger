@@ -1,5 +1,5 @@
 import os
-from DecodeTools import DecodeTools
+from DecodeTools import BitTracker
 import pandas as pd
 
 #-------------------------------------------------------------------------------
@@ -22,8 +22,16 @@ def ReadCANFrame ( f ):
 
     Return
     ======
-    A list of 5 CAN frame elements
-
+    arbID:
+      4-byte hex value
+    timeStamp:
+      2-byte hex value
+    flags:
+      1-byte hex value
+    length:
+      1-byte hex value
+    data:
+      8-byte hex value
     """
     arbID = f.read(4).hex()
     arbID = arbID[6:8] + arbID[4:6] + arbID[2:4] + arbID[0:2]
@@ -34,16 +42,30 @@ def ReadCANFrame ( f ):
     data = f.read(8).hex()
     return [arbID, timeStamp, flags, length, data]
 
+
 #-------------------------------------------------------------------------------
-def DecodeCANArbID (arbID):
+def DecodeCANArbID ( arbID ):
     """
-    
+    This function will decode the arbitration ID based on the FRC CAN spec:
+    https://docs.wpilib.org/en/stable/docs/software/can-devices/can-addressing.html
+
     Parameters
     ----------
+    arbID:
+      A 32-bit hex value without the leading '0x'
 
     Return
     ======
-    
+    deviceType:
+      5-bit integer
+    manufacturer:
+      8-bit integer
+    apiClass:
+      6-bit integer
+    apiIndex:
+      4-bit integer
+    deviceId:
+      6-bit integer
     """    
     binArbId = bin( int( arbID, 16 ) )[2:].zfill( 32 )[::-1]
     deviceType = int( binArbId[24:29][::-1], 2 )
@@ -53,62 +75,58 @@ def DecodeCANArbID (arbID):
     deviceId = int( binArbId[0:6][::-1], 2 )
     return [deviceType, manufacturer, apiClass, apiIndex, deviceId]
     
+
 #-------------------------------------------------------------------------------
-def DecodeCANLogfile ():
+def DecodeCANLogfile ( fileName ):
     """
-    
+
     Parameters
     ----------
+    fileName:
+      Full string path and filename
 
     Return
     ======
+      rows:
+        A list of dictionaries containing the decoded CAN frames
     
-    """  
-    with open( '2020-07-23_17-36-54.bin', 'rb' ) as inFile:
-        Status1BitMonitor = None
+    """
+    rows = []
+    with open( fileName, 'rb' ) as inFile:
         lastTimeStamp = -1.0
         timeStampAdder = 0
-
+        
         arbID, timeStamp, flags, length, data = ReadCANFrame( inFile )
         while ( arbID ):
-            deviceType, manufacturer, apiClass, apiIndex, deviceId = DecodeCANArbID( arbID )
+            devType, man, apiClass, apiIndex, devId = DecodeCANArbID( arbID )
+            
+            # The 2-byte timestamp will rollover every 2^16, track the
+            # rollovers and add them to the local timestamp
             intTimeStamp = int( timeStamp,  16 )
             if intTimeStamp < lastTimeStamp:
                 timeStampAdder += 1 << 16
             lastTimeStamp = intTimeStamp
             
-            if ( deviceType == 2 and apiClass == 0 and deviceId == 0 and apiIndex == 2):
-                if not Status1BitMonitor:
-                    Status1BitMonitor = DecodeTools( data )
-                Status1BitMonitor.UpdateBitChanges( data )
-                
-                binary_string = bin( int( data[0:2], 16 ) )[2:].zfill( 8 ) + bin( int( data[2:4], 16 ) )[2:].zfill( 8 )[0:3]
-                print( data, Status1BitMonitor.TwosComp( int( binary_string, 2 ), len (binary_string ) ) / 1023.0, Status1BitMonitor.GetPriorChangingBits()  )
-                
-                row = {}
-                #row['deviceType'] = deviceType
-                #row['manufacturer'] = manufacturer
-                #row['apiClass'] = apiClass
-                #row['apiIndex'] = apiIndex
-                #row['deviceId'] = deviceId
-                #row['flags'] = flags
-                row['timestamp'] = ( intTimeStamp + timeStampAdder ) / 1e3
-                #row['length'] = int( length,  16 )
-                row['data'] = data
-                row['motor_output'] = Status1BitMonitor.TwosComp( int( binary_string, 2 ), len (binary_string ) ) / 1023.0
-                row['changing_bits'] = Status1BitMonitor.GetPriorChangingBits() 
-                
-                
-                
-                rows.append( row )
+            # Gather the decoded data into a dictionary and add it to our list
+            row = {}
+            row['deviceType'] = devType
+            row['manufacturer'] = man
+            row['apiClass'] = apiClass
+            row['apiIndex'] = apiIndex
+            row['deviceId'] = devId
+            row['flags'] = flags
+            row['timestamp'] = ( intTimeStamp + timeStampAdder ) / 1e3
+            row['length'] = int( length,  16 )
+            row['data'] = data
+            rows.append( row )
 
-
+            # Get the next frame
             arbID, timeStamp, flags, length, data = ReadCANFrame( inFile )
+    
+    return rows
 
 
 
-#----------------------------------------------------------------------------------------------------------------------
-rows = []
-DecodeCANLogfile()
-df = pd.DataFrame(rows)
+#-------------------------------------------------------------------------------
+df = pd.DataFrame( DecodeCANLogfile( '.bin' ) )
 df.to_csv( 'Output.csv', index=False )

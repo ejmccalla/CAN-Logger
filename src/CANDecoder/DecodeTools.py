@@ -20,51 +20,73 @@ def twosComp ( intVal, numBits ):
   """
   signedIntVal = intVal
   if ( signedIntVal & ( 1 << ( numBits - 1 ) ) ) != 0:
-    rv = signedIntVal - ( 1 << numBits )
+    signedIntVal = signedIntVal - ( 1 << numBits )
   return signedIntVal
 
 
 #-------------------------------------------------------------------------------
-def hex8ByteTo64BitVal ( hex2BinaryVal ):
+def hex2Bin ( hexVal ):
   """
 
   This function will convert the given hex string to a binary string.
 
   Parameters
   ----------
-  hex8ByteVal:
-    An 8-byte hex string
+  hexVal:
+    An hex string without the leading '0x'
   
   Returns
   -------
-  bin64BitVal:
-    A 64-bit binary string
+  binVal:
+    A binary string without the leading '0b'
 
   """
-  bin64BitVal = ( bin( int( hex8ByteVal[  0:2  ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[  2:4  ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[  4:6  ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[  6:8  ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[  8:10 ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[ 10:12 ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[ 12:14 ], 16 ) )[ 2: ].zfill( 8 ) +
-                  bin( int( hex8ByteVal[ 14:16 ], 16 ) )[ 2: ].zfill( 8 ) )
-  return bin64BitVal
+  binVal = ''.join( bin( int( val, 16 ) )[ 2: ] for val in hexVal )
+  return binVal
 
 
 #-------------------------------------------------------------------------------
-class FrameTracker ():
+def flipBits ( binVal ):
+  """
+
+  This function will convert the given binary string to a binary string with the
+  bits flipped.
+
+  Parameters
+  ----------
+  binVal:
+    An binary string without the leading '0b'
+  
+  Returns
+  -------
+  flippedBinVal:
+    A binary string of flipped bits without the leading '0b'
+
+  """
+  flippedBinVal = ''.join( '1' if val == '0' else '0' for val in binVal )
+  return flippedBinVal
+
+
+#-------------------------------------------------------------------------------
+class BitTracker ():
   """
 
   This class is used to track a CAN frame data and aid in determining the
-  meanings of the various CAN frame data by tracking the total and
+  meanings of the various CAN frame data by tracking the total and the
   frame-to-frame bit changes.  When creating an object of this class an
   initial value needs to be provided as a baseline for the cumulative
-  bit monitoring and seeding the frame-to-frame monitoring.
+  bit monitoring and seeding the frame-to-frame monitoring as well as the bit
+  length of the data to monitor.
+
+  Attributes
+  ----------
+    bitLength:
+      The number of bits being tracked.  All hex values passed to this class
+      will perform conversions based on this.
 
   Methods
   -------
-    updateBitChanges( hex8ByteVal ):
+    updateBitChanges( hexVal ):
       This method will update the tracked frames bit changes with respect to the
       prior frame and the frame data used during object construction.
 
@@ -76,31 +98,45 @@ class FrameTracker ():
       This method will return a string indicating the bits which have changed
       from the prior call to updateBitChanges().
 
-  Attributes
-  ----------
-
   """
   def __init__ ( self, hexVal, bitLength ):
-    self.length = bitLength
-    self.binaryCumChanges = '1' * bitLength
-    self.binaryPrevChanges = '1' * bitLength
-    self.baseBinaryVal = hex2BinaryVal( hexVal )
-    self.baseBinaryPrevVal = hex2BinaryVal( hexVal )
+    self.bitLength = bitLength
+    self.binCumChanges = '1' * bitLength
+    self.binPrevChanges = '1' * bitLength
+    self.baseBinVal = hex2Bin( hexVal )
+    self.baseBinPrevVal = hex2Bin( hexVal )
 
 
   def _getChangingBits ( self, baseBits, newBits ):
+    """
+    This method will determing the changing bits between the provided inputs.
+
+    Parameters
+    ----------
+      baseBits:
+        A binary string without the leading '0b'
+      newBits:
+        A binary string without the leading '0b'
+
+    Returns
+    -------
+      bitChangeMask:
+        A binary string where 0's indicate a changing bit and 1's indicate bits
+        that are unchanged.
+    """    
     # Find the matching 0's
-    m_0s = bin( int( ''.join( '1' if x == '0' else '0' for x in baseBits ), 2 ) &
-                int( ''.join( '1' if x == '0' else '0' for x in newBits ), 2 ) )[ 2: ].zfill( self.length )
+    m_0s = bin( int( flipBits( baseBits ), 2 ) &
+                int( flipBits( newBits ), 2 ) )[ 2: ].zfill( self.bitLength )
     # Find the matching 1's
     m_1s = bin( int( baseBits, 2 ) &
-                int( newBits, 2 ) )[2:].zfill( self.length )
+                int( newBits, 2 ) )[2:].zfill( self.bitLength )
     # Bit changes are 0's
-    bitChangeMask = bin( int( m_0s, 2 ) | int( m_1s, 2 ) )[ 2: ].zfill( self.length )
+    bitChangeMask = bin( int( m_0s, 2 ) |
+                         int( m_1s, 2 ) )[ 2: ].zfill( self.bitLength )
     return bitChangeMask
 
     
-  def updateBitChanges ( self, hex8ByteVal ):
+  def updateBitChanges ( self, hexVal ):
     """
     This method will update the attributes which track the total and
     frame-to-frame bit changes.  This should be called whenever a new data for a
@@ -108,24 +144,23 @@ class FrameTracker ():
 
     Parameters
     ----------
-      hex8ByteVal:
-        An 8-byte hex string
+      hexVal:
+        A hex string without the leading '0x'
 
     Returns
     -------
       none
     """
-    bin64BitVal = hex8ByteTo64BitVal( hex8ByteVal )
+    binVal = hex2Bin( hexVal )
 
     # Track the overall bit changes
-    bitChangeMask = self._getChangingBits( self.baseBin64BitVal, bin64BitVal )
-    self.bin64BitCumulativeChanges = bin( int( bitChangeMask, 2 ) &
-                                          int( self.bin64BitCumulativeChanges, 2 ) )[ 2: ].zfill( 64 )
+    bitChangeMask = self._getChangingBits( self.baseBinVal, binVal )
+    self.binCumChanges = bin( int( bitChangeMask, 2 ) &
+                              int( self.binCumChanges, 2 ) )[ 2: ].zfill( 64 )
     
     # Track the changes from the prior
-    self.bin64BitPreviousChanges = self._getChangingBits( self.baseBin64BitPreviousVal, bin64BitVal )
-    self.baseBin64BitPreviousVal = bin64BitVal
-
+    self.binPrevChanges = self._getChangingBits( self.baseBinPrevVal, binVal )
+    self.baseBinPrevVal = binVal
 
 
   def getCumulativeChangingBits ( self ):
@@ -143,7 +178,7 @@ class FrameTracker ():
       A string indicating which bits have changed
     """
     rv = ''
-    for i, v in enumerate( self.bin64BitCumulativeChanges ):
+    for i, v in enumerate( self.binCumChanges ):
       if ( v == '0' ):
         rv = rv + 'BIT' + str( i )
     return rv
@@ -164,7 +199,7 @@ class FrameTracker ():
       A string indicating which bits have changed
     """
     rv = ''
-    for i, v in enumerate( self.bin64BitPreviousChanges ):
+    for i, v in enumerate( self.binPrevChanges ):
       if ( v == '0' ):
         rv = rv + 'BIT' + str( i )
     return rv        
