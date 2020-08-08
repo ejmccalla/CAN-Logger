@@ -14,7 +14,7 @@ FILENAME_SIZE = 23                                                              
 FILESIZE_SIZE = 10                                                              # CAN-Logger file is is uint32_t...10 bytes
 BLOCK_SIZE = 512                                                                # CAN-Logger logs and sends data in 512 byte blocks
 START_CMD = str.encode( "START" ) + b'\x00'                                     # CAN-Logger serial start command
-SKIP_CMD = str.encode( "SKIP" ) + b'\x00'                                       # CAN-Logger serial skip command
+SKIP_CMD  = str.encode( "SKIP " ) + b'\x00'                                     # CAN-Logger serial skip command
 
 #-------------------------------------------------------------------------------
 #  printProgress
@@ -136,21 +136,24 @@ while ( True ):                                                                 
   ser.write( START_CMD )                                                        # Request the file name
   buf = ser.read( FILENAME_SIZE )
   if ( len( buf ) == FILENAME_SIZE ):
+    print( buf.decode() )
     fileName = buf.decode()
 
   elif ( len( buf ) > 0 ):
+    print( buf )
     print( "Expected filename size: %s, received: %s " %
            ( FILENAME_SIZE, len ( buf ) ) )
     break
 
-  else:                                                                         # No data response, assume no more files
+  else:                                                                         # No response, assume no more files and exit
     print ("No more files to transfer...")
     break
 
   if ( os.path.isfile( fileName ) ):
-    print( "File %s already exists, skipping %s " % ( fileName ) )
+    print( "File %s already exists, skipping..." % ( fileName ) )
     ser.write( SKIP_CMD )
+    time.sleep(2)
   else:
-    if not getFileFromTeensy():                                                 # exit if something goes wrong
-      break                                                                     # reason should be sent to standard out        
+    if not getFileFromTeensy():                                                 # Exit if something goes wrong
+      break                                                                     # reason is sent to standard out        
     

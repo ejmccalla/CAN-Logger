@@ -72,7 +72,10 @@
 #define SD_FILE_WRITE_FAILED     ( BIT3 )
 #define CAN_FIFO_OVERRUN         ( BIT4 )
 #define CAN_BUFFER_OVERRUN       ( BIT5 )
+#define USB_COM_ERROR            ( BIT6 )
+#define USB_FILE_XFER_ERROR      ( BIT7 )
 
+// Constants
 const uint8_t kTeamNumber = 8;                                                  // CAN frame team number
 const uint8_t kDeviceType = 10;                                                 // CAN frame device number
 const uint16_t kStopLogging = 0;                                                // CAN frame stop logging command API group/index
@@ -80,21 +83,12 @@ const uint16_t kStartLogging = 1;                                               
 const uint16_t kRequestStatus = 16;                                             // CAN request data frame command API group/index
 const size_t kBlockSize = 32;                                                   // Block size, the number of CAN messages
 const size_t kFifoSize = 32;                                                    // FIFO size, the number of blocks
+const uint8_t kCmdBufSz = 6;                                                    // USB serial incoming command buffer size
 const char kStartCmd[] = "START";                                               // USB serial file transfer incoming START command
-const char kSkipCmd[] = "SKIP";                                                 // USB serial file transfer incoming SKIP command
+const char kSkipCmd[] = "SKIP ";                                                // USB serial file transfer incoming SKIP command
 const uint8_t kFileNameSize = 24;                                               // Filename format YYYY-MM-DD_HH:MM:SS.bin
 
-SdFatSdioEX sd;                                                                 // The micro SD card object
-File file;                                                                      // SD file object to write data to the SD card
-SdFile root;                                                                    // SD file object to read the root of the FS
-SdFile txferFile;                                                               // SD file object of the file to be transferred
-
-#ifdef USE_CAN0                                                                 // The CAN-bus oject on the Teensy 3.6 currently
-  FlexCAN_T4<CAN0, RX_SIZE_256, TX_SIZE_16> CanBus;                             // supports 2 buses via the hardware above
-#else
-  FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> CanBus;
-#endif
-
+// Types
 typedef struct save_CAN_message_t {                                             // 16 byte CAN message to save
   uint32_t arbId = 0;
   uint16_t timeStamp = 0;
@@ -105,45 +99,50 @@ typedef struct save_CAN_message_t {                                             
       uint8_t reserved:5;
   } flags;
   uint8_t length = 8;
-  uint8_t buf[8] = { 0 };
+  uint8_t data[8] = { 0 };
 } save_CAN_message_t;
 
 typedef struct block_t {                                                        // Write data blocks to FIFO/SD rather than individual CAN messages
     save_CAN_message_t frame_array[ kBlockSize ];         
 } block_t;
-block_t block;
-size_t blockHead;
-save_CAN_message_t saveCanMessage;
 
+typedef enum {                                                                  // Logger states
+  STOPPED,
+  LOGGING
+} loggerState_t;
+
+// Objects and variables used by the SD-thread
+SdFatSdioEX sd;                                                                 // The micro SD card object
+File file;                                                                      // SD file object to write data to the SD card
+loggerState_t sdState = STOPPED;                                                // Track the state of the SD thread
+uint8_t sdFailBitMask = 0;                                                      // Failing bitmask for the SD thread, see above defines for bit definitions
+
+// Objects and variables used by the CAN-thread
+#ifdef USE_CAN0                                                                 // The CAN-bus oject on the Teensy 3.6 currently
+  FlexCAN_T4<CAN0, RX_SIZE_256, TX_SIZE_16> CanBus;                             // supports 2 buses via the hardware above
+#else
+  FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> CanBus;
+#endif
+block_t block;                                                                  // Structure to hold several frames before writing to the FIFO
+size_t blockIdx;                                                                // Index into the block structure
+save_CAN_message_t saveCanMessage;                                              // Used to copy parts of the library CAN message...we don't need all of what they have
+loggerState_t canState = STOPPED;                                               // Track the state of the SD thread
+uint8_t canFailBitMask = 0;                                                     // Failing bitmask for the CAN thread, see above defines for bit definitions
+
+// Shared resources between both threads
 block_t fifo[ kFifoSize ];                                                      // This FIFO is the go-between of the CAN thread and SD thread
 size_t fifoHead = 0;                                                            // FIFO head index
 size_t fifoTail = 0;                                                            // FIFO tail index
 uint32_t fifoOverrun = 0;                                                       // Count the FIFO overruns
-
-typedef enum {                                                                  // Logger states, one for each thread
-  STOPPED,
-  LOGGING
-} loggerState_t ;
-loggerState_t sdState = STOPPED;
-loggerState_t canState = STOPPED;
-
-uint8_t sdFailBitMask = 0;                                                      // Failing bitmask for the SD thread, see above defines for bit definitions
-uint8_t canFailBitMask = 0;                                                     // Failing bitmask for the CAN thread, see above defines for bit definitions
-
 char fileName[] = "2000-00-00_00-00-00.bin";                                    // Filename of the log file being created, format YYYY-MM-DD_HH:MM:SS
-char txferFileName[kFileNameSize];                                              // Filename of the log file to transfer
 
-const uint8_t cmdBufSz = 6;                                                     // USB serial incoming command buffer size
-char cmdBuf[ cmdBufSz ];                                                        // USB serial incoming command buffer
-size_t bytesRead;                                                               // USB serial incoming bytes read
-uint16_t txferBufIdx;                                                           // USB serial outgoing buffer index
-uint8_t txferBuf[ 16 * kBlockSize ];                                            // USB serial outgoing buffer, 16 byte CAN frame * kBlockSize = buffer size
-
+// Semaphores for communicting between threads
 SEMAPHORE_DECL ( startLogging, 0 );                                             // Used to signal start of logging
 SEMAPHORE_DECL ( stopLogging, 0 );                                              // Used to signal logging is finished
 SEMAPHORE_DECL ( fifoData, 0 );                                                 // Count of blocks in the FIFO
 SEMAPHORE_DECL ( fifoSpace, kFifoSize );                                        // Count of free blocks in the FIFO
 
+// The CAN-thread setup
 THD_WORKING_AREA ( WACT, 200 );                                                 // Declare a stack with 200 bytes beyond context switch and interrupt needs
 THD_FUNCTION ( CT, arg ) {                                                      // Declare the CAN thread function, which simply calls
   while ( TRUE ) {                                                              // the CAN events method which will call our processFrame
@@ -155,11 +154,13 @@ THD_FUNCTION ( CT, arg ) {                                                      
 //------------------------------------------------------------------------------
 //  printFrame
 //
-//    This function will write the given CAN frame out to the USB serial port.
+//    This function will write the given CAN frame out to the USB serial port
+//    and is only used during development/debug.
 //
 //  Parameters
 //  ----------
-//    frame:  CAN_message_t   A pointer to the CAN frame to output.
+//    frame:
+//      A reference to the CAN frame to output
 //
 //  Returns
 //  -------
@@ -208,7 +209,8 @@ void printFrame ( const CAN_message_t &frame ) {
 //
 //  Parameters
 //  ----------
-//    frame:  CAN_message_t   A pointer to the CAN frame to process.
+//    frame:  
+//      A reference to the CAN frame to process
 //
 //  Returns
 //  -------
@@ -236,7 +238,7 @@ void processFrame ( const CAN_message_t &frame ) {
         fileName[17] = ( frame.buf[5] / 10 ) % 10 + '0';                        // Second is in byte 5
         fileName[18] = frame.buf[5] % 10 + '0';
         canState = LOGGING;
-        blockHead = 0;
+        blockIdx = 0;
         fifoOverrun = 0;
         chSemSignal ( &startLogging );
       }      
@@ -259,19 +261,19 @@ void processFrame ( const CAN_message_t &frame ) {
         }
         saveCanMessage.flags.remote = frame.flags.remote;
         saveCanMessage.length = frame.len;
-        for (uint8_t i = 0; i < 8; i++) {
-          saveCanMessage.buf[i] = frame.buf[i];
+        for ( uint8_t i = 0; i < 8; i++ ) {
+          saveCanMessage.data[ i ] = frame.buf[ i ];
         }
-        block.frame_array[blockHead] = saveCanMessage;
-        if ( blockHead < ( kBlockSize - 1 ) ) {
-          blockHead = blockHead + 1;
+        block.frame_array[ blockIdx ] = saveCanMessage;
+        if ( blockIdx < ( kBlockSize - 1 ) ) {
+          blockIdx = blockIdx + 1;
         
         } else if ( chSemWaitTimeout( &fifoSpace, TIME_IMMEDIATE ) != MSG_OK ) {// There is no space in the FIFO and we have an overrun condition
           fifoOverrun++;
           canFailBitMask |= CAN_FIFO_OVERRUN;
         
         } else {
-          blockHead = 0;
+          blockIdx = 0;
           fifo[fifoHead] = block;
           fifoHead = fifoHead < ( kFifoSize - 1 ) ? fifoHead + 1 : 0;
           chSemSignal( &fifoData );
@@ -310,13 +312,14 @@ void processFrame ( const CAN_message_t &frame ) {
 //
 //  Parameters
 //  ----------
-//    ed:  uint8_t  The bit-encoded error code
+//    ec:
+//      A reference to the bit-encoded error code
 //
 //  Returns
 //  -------
 //    This function never returns
 //------------------------------------------------------------------------------
-void flashEC ( uint8_t ec ) {
+void flashEC ( uint8_t &ec ) {
   digitalWrite( LED, LOW );
   while ( true ) {
     delay( 4000 );
@@ -339,88 +342,148 @@ void flashEC ( uint8_t ec ) {
 
 
 //------------------------------------------------------------------------------
-//  transferLogs
+//  getSerialCommand
 //
+//    This function will attempt to read a USB serial command.
 //
 //  Parameters
 //  ----------
-//    none
+//    ec:
+//      A reference to the bit-encoded error code
+//    buf:
+//      A pointer to the buffer which will hold the incoming serial command
 //
 //  Returns
 //  -------
 //    none
 //------------------------------------------------------------------------------
-void transferLogs ( void ) {
+void getSerialCommand ( uint8_t &ec, char *buf ) {
+  size_t bytesRead = 0;
+  uint32_t timeout = millis();
 
-  if (!root.open("/")) {
-    sd.errorHalt("open root failed");
+  while ( !bytesRead ) {
+    if ( ( millis() - timeout ) > 5000 ) {
+      ec |= USB_FILE_XFER_ERROR;
+      flashEC( ec );     
+    } else {
+      delay( 100 );
+    }
+    bytesRead = Serial.readBytes( buf, (size_t) kCmdBufSz );
+  }
+}
+
+
+//------------------------------------------------------------------------------
+//  checkFileXferRequest
+//
+//    This function will check the USB serial port for an incoming request to
+//    beging transferring files.
+//
+//  Parameters
+//  ----------
+//
+//  Returns
+//  -------
+//    wantsXferFiles:
+//      1 = request start transferring files, 0 = no request
+//------------------------------------------------------------------------------
+uint8_t checkFileXferRequest () {
+  uint8_t wantsXferFiles = 0;
+  char cmdBuf[ kCmdBufSz ];
+  size_t bytesRead = Serial.readBytes( cmdBuf, (size_t) kCmdBufSz );
+
+  if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {
+    wantsXferFiles = 1;
+  }
+  return wantsXferFiles;
+}
+
+
+//------------------------------------------------------------------------------
+//  transferLogs
+//
+//
+//  Parameters
+//  ----------
+//    ec:
+//      A reference to the bit-encoded error code
+//
+//  Returns
+//  -------
+//    none
+//------------------------------------------------------------------------------
+void transferLogs ( uint8_t &ec ) {
+  SdFile root;                                                                  // SD file object to read the root of the FS
+  SdFile txferFile;                                                             // SD file object of the file to be transferred
+  char cmdBuf[ kCmdBufSz ];                                                     // USB serial incoming command buffer
+  uint16_t txferBufIdx;                                                         // USB serial outgoing buffer index
+  uint8_t txferBuf[ 16 * kBlockSize ];                                          // USB serial outgoing buffer, 16 byte CAN frame * kBlockSize = buffer size
+  char txferFileName[ kFileNameSize ];                                          // Filename of the log file to transfer  
+  uint8_t ledState = HIGH;                                                      // Used for quickly flashing the LED during files transfers
+  uint8_t blockTxfrCnt = 0;                                                     // Used for quickly flashing the LED during files transfers
+
+  if ( !root.open( "/" ) ) {
+    ec |= USB_FILE_XFER_ERROR;
+    flashEC( ec );
   }
 
-  uint8_t alreadyHaveFileName = 1;
-  uint8_t ledState = HIGH;
-  uint8_t blockTxfrCnt = 0;
   while ( txferFile.openNext( &root, O_RDONLY ) ) {
+    
     if ( !txferFile.isDir() ) {
-
-      // Send the name without the null character
-      if ( !alreadyHaveFileName ) {
-        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-        while ( !bytesRead ) {
-          delay( 100 );
-          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-        }
-        alreadyHaveFileName = 0;       
-      }
-      if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {
-        txferFile.getName( txferFileName, (size_t) kFileNameSize );
-        Serial.write( txferFileName, (size_t) kFileNameSize - 1 );
-
-        // Send the size when requested or skip the file
-        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-        while ( !bytesRead ) {
-          delay( 100 );
-          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-        }        
-        if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {
-          txferFile.printFileSize( &Serial );
-
-          // Send the file when requested
-          bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-          while ( !bytesRead ) {  
-            delay( 100 );
-            bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
+      txferFile.getName( txferFileName, (size_t) kFileNameSize );               // Send the file name
+      Serial.write( txferFileName, (size_t) kFileNameSize - 1 );                // without the null character
+      getSerialCommand( ec, cmdBuf );
+      
+      if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {                                 // The host wants the file size
+        txferFile.printFileSize( &Serial );
+        getSerialCommand( ec, cmdBuf );
+        
+        if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {                               // The host wants the file
+          txferBufIdx = 0;  
+          
+          while ( txferFile.available() ) {
+            txferBuf[ txferBufIdx ] = txferFile.read();                         // Buffer file for USB serial transfer
+            txferBufIdx++;
+            
+            if ( txferBufIdx == ( 16 * kBlockSize ) ) {
+              delay (10);
+              Serial.write( txferBuf, (size_t) ( 16 * kBlockSize ) );           // Transfer the buffered data
+              txferBufIdx = 0;
+              blockTxfrCnt++;
+              
+              if ( ( ledState == LOW ) & ( blockTxfrCnt == 2 ) ) {              // Flash LED
+                digitalWrite( LED, HIGH );
+                ledState = HIGH;
+                blockTxfrCnt = 0;
+              
+              } else if ( ( ledState == HIGH ) & ( blockTxfrCnt == 2 ) ) {
+                digitalWrite( LED, LOW );
+                ledState = LOW;
+                blockTxfrCnt = 0;
+              }
+            }
           }
-          if ( strcmp( cmdBuf, kStartCmd ) == 0 ) {
-            txferBufIdx = 0;  
-            while ( txferFile.available() ) {
-              txferBuf[ txferBufIdx ] = txferFile.read();
-              txferBufIdx++;
-              if ( txferBufIdx == ( 16 * kBlockSize ) ) {
-                delay (10);
-                Serial.write( txferBuf, (size_t) ( 16 * kBlockSize ) );
-                txferBufIdx = 0;
-                blockTxfrCnt++;
-                if ( ( ledState == LOW ) & ( blockTxfrCnt == 2 ) ) {
-                  digitalWrite( LED, HIGH );
-                  ledState = HIGH;
-                  blockTxfrCnt = 0;
-                } else if ( ( ledState == HIGH ) & ( blockTxfrCnt == 2 ) ) {
-                  digitalWrite( LED, LOW );
-                  ledState = LOW;
-                  blockTxfrCnt = 0;
-                } // LED Toggle
-              } // write data
-            } // while 
-          } // kStartCmd for file
-        } // kStartCmd for file size
-      } // kStartCmd for file name
-      digitalWrite( LED, HIGH );
-      ledState = HIGH;
+          digitalWrite( LED, HIGH );
+          ledState = HIGH;          
+          getSerialCommand( ec, cmdBuf );                                       // Wait for the next file request
+        
+        } else {                                                                // Unexpected host command, error out
+          ec |= USB_FILE_XFER_ERROR;
+          flashEC( ec );                                                        // Does not return
+        }
+
+      } else if ( strcmp( cmdBuf, kSkipCmd ) == 0 ) {                           // Host dosn't want the file, so
+        getSerialCommand( sdFailBitMask, cmdBuf );                              // wait for the next file request
+
+      } else {                                                                  // Unexpected host command, error out
+        ec |= USB_FILE_XFER_ERROR;
+        flashEC( ec );                                                          // Does not return
+      }
     }
     txferFile.close();
   }
   root.close();
-  delay( 3000 );  // The PC-side will timeout after 1 second if no response to a file request is given
+  delay( 3000 );                                                                // The host file name request will timeout after 1 second 
   Serial.clear();
 }
 
@@ -464,11 +527,18 @@ void setup ( void ) {
   pinMode( LED, OUTPUT );
   
   Serial.begin( 9600 );
-  //while ( !Serial ) {}
+  
+  while (!Serial){}
+  Serial.println( F("Before") );
+//  delay(2000);
+//  if ( !Serial ) {
+//    sdFailBitMask |= USB_COM_ERROR;
+//    flashEC( sdFailBitMask );                                                   // Does not return
+//  }
   
   if ( !sd.begin() ) {
     sdFailBitMask |= SD_START_FAILED;
-    flashEC( sdFailBitMask );
+    flashEC( sdFailBitMask );                                                   // Does not return
   }
 
   CanBus.begin();
@@ -519,10 +589,8 @@ void loop () {
 
     case STOPPED:
       while ( chSemWaitTimeout( &startLogging, TIME_IMMEDIATE ) != MSG_OK ) {
-        bytesRead = Serial.readBytes( cmdBuf, (size_t) cmdBufSz );
-        if ( ( (uint8_t) bytesRead == cmdBufSz ) &
-             ( strcmp( cmdBuf, kStartCmd ) == 0 ) ) {                           // Looks like the Teensy is connected to a PC looking to download files
-          transferLogs();
+        if ( checkFileXferRequest() ) {                                         // Looks like the Teensy is connected to a PC looking to download files
+          transferLogs( sdFailBitMask );
         }
       }
       if ( !file.open( fileName, O_CREAT | O_WRITE | O_TRUNC ) ) {              // The start command sets the filename

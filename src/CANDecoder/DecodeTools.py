@@ -41,7 +41,7 @@ def hex2Bin ( hexVal ):
     A binary string without the leading '0b'
 
   """
-  binVal = ''.join( bin( int( val, 16 ) )[ 2: ] for val in hexVal )
+  binVal = ''.join( bin( int( val, 16 ) )[ 2: ].zfill( 4 ) for val in hexVal )
   return binVal
 
 
