@@ -94,37 +94,78 @@ def decodeCTRETalonStatus1 ( data ):
   #       Byte 0  Byte 1
   # Bits  7:0     15:13
   binVal = hex2Bin( data[ 0:2 ] ) + hex2Bin( data[ 2:4 ] )[ 0:3 ]
- 
-  # Bit 13 = bit 19 XOR (bit13 XOR bit 16)
-  bit13 = int(hex2Bin( data[ 4:6 ] )[ 5 ], 2) ^ (int(binVal[10],2) ^ int(hex2Bin( data[ 4:6 ] )[ 7 ], 2))
+  bit16 = int( hex2Bin( data[ 4:6 ] )[ 7 ], 2)
+  bit17 = int( hex2Bin( data[ 4:6 ] )[ 6 ], 2)
+  bit18 = int( hex2Bin( data[ 4:6 ] )[ 5 ], 2)
+  bit19 = int( hex2Bin( data[ 4:6 ] )[ 4 ], 2)
+  bit13 = int( binVal[ 10 ], 2 )
+  bit14 = int( binVal[ 9 ], 2 )
+  bit15 = int( binVal[ 8 ], 2 )
+  bit0 = int( binVal[ 7 ], 2 )
+  bit1 = int( binVal[ 6 ], 2 )
+  bit2 = int( binVal[ 5 ], 2 )
+  bit3 = int( binVal[ 4 ], 2 )
+  bit4 = int( binVal[ 3 ], 2 )
+  bit5 = int( binVal[ 2 ], 2 )
+  bit6 = int( binVal[ 1 ], 2 )
+  bit7 = int( binVal[ 0 ], 2 )
 
-  # Bit 14 = bit 19 XOR (NOT bit14 XOR Bit 17)
-  bit14 = int(hex2Bin( data[ 4:6 ] )[ 5 ], 2) ^ (1 - (int(binVal[9],2) ^ int(hex2Bin( data[ 4:6 ] )[ 6 ], 2)))
+  # Bit 13 = (b13 & b19) | (~b13 & b11 & ~b16)  | (b13 & ~b11 & ~b16) | (b13 & b11 & b16) | (~b13 & ~b11 & ~b19 & ~b16)
+  bit13 = int(binVal[10],2)
 
-  # Bit 15 = bit 19 XOR (NOT bit15 XOR Bit 18)
-  bit15 = int(hex2Bin( data[ 4:6 ] )[ 5 ], 2) ^ (1 - (int(binVal[8],2) ^ int(hex2Bin( data[ 4:6 ] )[ 5 ], 2)))
+  # Bit 14 = A:b14 C:b11 D:b19 F:b17  (~b14 & b11) | (b14 & b19) | (~b14 & ~b19 & ~b17) | (b14 & ~b11 & b17)
+  bit14 = int(binVal[9],2)
 
+  # Bit 15 = (~b15 & ~b19 & ~b18) | (b15 & ~b19 & b18) | (b15 & ~b12 & b19)
+  bit15 = int(binVal[8],2)
+
+  # Bit 0 is inverted
+  bit0 = flipBits( binVal[ 7 ] )
+
+  # Bit 1 = bit11 XOR bit 19 XOR bit 1
+  bit1 = int( binVal[ 6 ], 2 ) ^ ( int(hex2Bin( data[ 4:6 ] )[ 4 ], 2) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2) ) 
   
-  
-  # Bits 0 is inverted
-  binVal = binVal[ 0:7 ] + flipBits( binVal[ 7 ] ) + str( bit15 ) + str( bit14 ) + str( bit13 )
+  # Bit 2 = bit 2 XOR bit 11
+  bit2 =  int( binVal[ 5 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2)
 
-  # Bits 2, 3, 4, 6 XORed with bit 19
+  # Bit 3 = not XOR bit 3 and bit 12
+  bit3 = 1 - (int( binVal[ 4 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 3 ], 2))
+
+  # Bit 4 = bit 4 XOR not (bit 12 XOR bit 11)
+  bit4 =  int( binVal[ 3 ], 2 )  ^  ( 1 - ( int( hex2Bin( data[ 2:4 ] )[ 3 ], 2) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2) ) )
+
+  # Bit 5 = XOR bit 5 and bit 11
+  bit5 =  int( binVal[ 2 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2)
 
 
-  rv['Output (%)'] = twosComp( int( binVal, 2 ), 11 )
+  # Bit 6 = bit 6 XOR (not bit 12 AND not bit 11)
+  bit6 = int( binVal[ 1 ], 2 ) ^ ( ( 1 - int( hex2Bin( data[ 2:4 ] )[ 3 ], 2 ) ) & ( 1 - int( hex2Bin( data[ 2:4 ] )[ 4 ], 2 ) ) )
+
+  updatedBinVal = binVal[ 0 ] + str( bit6 ) + str( bit5 ) + str( bit4 ) + str( bit3 ) + str( bit2 ) + str( bit1 ) + bit0 + str( bit15 ) + str( bit14 ) + str( bit13 )
+
+
+
+  rv['Output (%)'] = twosComp( int( updatedBinVal, 2 ), 11 )
   # Scale to +-100.0
   rv['Output (%)'] *= ( 100.0 / 1023.0 )
+  rv['raw input'] = twosComp( int( binVal, 2 ), 11 )
 
   # All frames output all individual bits
   for byte in range( 8 ):
     for bit in reversed( range( 8 ) ):
       rv[ 'Bit %s' % ( 8 * byte + bit ) ] = ( int( data[ (2 * byte):((2 * byte)+2) ], 16 ) & ( 1 << bit ) ) >> bit
 
-  rv['Bit 0']  = 1 - rv['Bit 0']
-  rv['Bit 13'] = bit13
-  rv['Bit 14'] = bit14
-  rv['Bit 15'] = bit15
+  rv['dBit 7'] = binVal[ 0 ]
+  rv['dBit 6'] = bit6
+  rv['dBit 5'] = bit5
+  rv['dBit 4'] = bit4
+  rv['dBit 3'] = bit3
+  rv['dBit 2'] = bit2
+  rv['dBit 1'] = bit1
+  rv['dBit 0'] = bit0
+  rv['dBit 15'] = bit15
+  rv['dBit 14'] = bit14
+  rv['dBit 13'] = bit13
 
   return rv
 
