@@ -66,6 +66,25 @@ def flipBits ( binVal ):
   flippedBinVal = ''.join( '1' if val == '0' else '0' for val in binVal )
   return flippedBinVal
 
+#-------------------------------------------------------------------------------
+def flipBit ( bitVal ):
+  """
+
+  This function will flip the given binary integer.
+
+  Parameters
+  ----------
+  bitVal:
+    An integer value of 1 or 0
+  
+  Returns
+  -------
+  flipBitVal:
+    An integer value of 1 or 0
+
+  """
+  flipBitVal = 1 - bitVal
+  return flipBitVal
 
 #-------------------------------------------------------------------------------
 class BitTracker ():

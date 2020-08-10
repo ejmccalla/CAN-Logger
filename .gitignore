@@ -161,3 +161,4 @@ imgui.ini
 
 # End of https://www.gitignore.io/api/c++,java,linux,macos,gradle,windows,visualstudiocode
 src/CANDecoder/__pycache__/DecodeTools.cpython-37.pyc
+src/CANDecoder/__pycache__/DecodeTools.cpython-38.pyc

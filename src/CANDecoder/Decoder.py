@@ -2,7 +2,7 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from DecodeTools import BitTracker, hex2Bin, twosComp, flipBits
+from DecodeTools import BitTracker, hex2Bin, twosComp, flipBits, flipBit
 
 #-------------------------------------------------------------------------------
 def ReadCANFrame ( f ):
@@ -94,56 +94,55 @@ def decodeCTRETalonStatus1 ( data ):
   #       Byte 0  Byte 1
   # Bits  7:0     15:13
   binVal = hex2Bin( data[ 0:2 ] ) + hex2Bin( data[ 2:4 ] )[ 0:3 ]
-  bit16 = int( hex2Bin( data[ 4:6 ] )[ 7 ], 2)
-  bit17 = int( hex2Bin( data[ 4:6 ] )[ 6 ], 2)
-  bit18 = int( hex2Bin( data[ 4:6 ] )[ 5 ], 2)
-  bit19 = int( hex2Bin( data[ 4:6 ] )[ 4 ], 2)
-  bit13 = int( binVal[ 10 ], 2 )
-  bit14 = int( binVal[ 9 ], 2 )
-  bit15 = int( binVal[ 8 ], 2 )
-  bit0 = int( binVal[ 7 ], 2 )
-  bit1 = int( binVal[ 6 ], 2 )
-  bit2 = int( binVal[ 5 ], 2 )
-  bit3 = int( binVal[ 4 ], 2 )
-  bit4 = int( binVal[ 3 ], 2 )
-  bit5 = int( binVal[ 2 ], 2 )
-  bit6 = int( binVal[ 1 ], 2 )
-  bit7 = int( binVal[ 0 ], 2 )
+  b16 = int( hex2Bin( data[ 4:6 ] )[ 7 ], 2)
+  b17 = int( hex2Bin( data[ 4:6 ] )[ 6 ], 2)
+  b18 = int( hex2Bin( data[ 4:6 ] )[ 5 ], 2)
+  b19 = int( hex2Bin( data[ 4:6 ] )[ 4 ], 2)
+  b11 = int( hex2Bin( data[ 2:4 ] )[ 4 ], 2)
+  b12 = int( hex2Bin( data[ 2:4 ] )[ 3 ], 2)
+  b13 = int( binVal[ 10 ], 2 )
+  b14 = int( binVal[ 9 ], 2 )
+  b15 = int( binVal[ 8 ], 2 )
+  b0 = int( binVal[ 7 ], 2 )
+  b1 = int( binVal[ 6 ], 2 )
+  b2 = int( binVal[ 5 ], 2 )
+  b3 = int( binVal[ 4 ], 2 )
+  b4 = int( binVal[ 3 ], 2 )
+  b5 = int( binVal[ 2 ], 2 )
+  b6 = int( binVal[ 1 ], 2 )
+  b7 = int( binVal[ 0 ], 2 )
 
-  # Bit 13 = (b13 & b19) | (~b13 & b11 & ~b16)  | (b13 & ~b11 & ~b16) | (b13 & b11 & b16) | (~b13 & ~b11 & ~b19 & ~b16)
-  bit13 = int(binVal[10],2)
+  # Bit 13
+  b13 = b13 ^ ( b12 & b16 )
 
-  # Bit 14 = A:b14 C:b11 D:b19 F:b17  (~b14 & b11) | (b14 & b19) | (~b14 & ~b19 & ~b17) | (b14 & ~b11 & b17)
-  bit14 = int(binVal[9],2)
+  # Bit 14
+  b14 = b14 ^ ( flipBit( b11 ) & flipBit( b19 ) & flipBit( b18 ) & flipBit( b17 ) )
 
-  # Bit 15 = (~b15 & ~b19 & ~b18) | (b15 & ~b19 & b18) | (b15 & ~b12 & b19)
-  bit15 = int(binVal[8],2)
+  # Bit 15
+  b15 = flipBit( b15 ^ b18 )
 
   # Bit 0 is inverted
-  bit0 = flipBits( binVal[ 7 ] )
+  b0 = flipBit( b0 )
 
   # Bit 1 = bit11 XOR bit 19 XOR bit 1
-  bit1 = int( binVal[ 6 ], 2 ) ^ ( int(hex2Bin( data[ 4:6 ] )[ 4 ], 2) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2) ) 
+  b1 = b1 ^ ( b19 ^ b11 ) 
   
   # Bit 2 = bit 2 XOR bit 11
-  bit2 =  int( binVal[ 5 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2)
+  b2 =  b2 ^ b11
 
   # Bit 3 = not XOR bit 3 and bit 12
-  bit3 = 1 - (int( binVal[ 4 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 3 ], 2))
+  b3 = flipBit( b3 ^ b12 )
 
   # Bit 4 = bit 4 XOR not (bit 12 XOR bit 11)
-  bit4 =  int( binVal[ 3 ], 2 )  ^  ( 1 - ( int( hex2Bin( data[ 2:4 ] )[ 3 ], 2) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2) ) )
+  b4 =  b4 ^ flipBit( b11 ^ b12 )
 
   # Bit 5 = XOR bit 5 and bit 11
-  bit5 =  int( binVal[ 2 ], 2 ) ^ int( hex2Bin( data[ 2:4 ] )[ 4 ], 2)
-
+  b5 =  b5 ^ b11
 
   # Bit 6 = bit 6 XOR (not bit 12 AND not bit 11)
-  bit6 = int( binVal[ 1 ], 2 ) ^ ( ( 1 - int( hex2Bin( data[ 2:4 ] )[ 3 ], 2 ) ) & ( 1 - int( hex2Bin( data[ 2:4 ] )[ 4 ], 2 ) ) )
+  b6 = b6 ^ ( flipBit( b12 ) & flipBit( b11 ) )
 
-  updatedBinVal = binVal[ 0 ] + str( bit6 ) + str( bit5 ) + str( bit4 ) + str( bit3 ) + str( bit2 ) + str( bit1 ) + bit0 + str( bit15 ) + str( bit14 ) + str( bit13 )
-
-
+  updatedBinVal = str( b7 ) + str( b6 ) + str( b5 ) + str( b4 ) + str( b3 ) + str( b2 ) + str( b1 ) + str( b0 ) + str( b15 ) + str( b14 ) + str( b13 )
 
   rv['Output (%)'] = twosComp( int( updatedBinVal, 2 ), 11 )
   # Scale to +-100.0
@@ -155,17 +154,17 @@ def decodeCTRETalonStatus1 ( data ):
     for bit in reversed( range( 8 ) ):
       rv[ 'Bit %s' % ( 8 * byte + bit ) ] = ( int( data[ (2 * byte):((2 * byte)+2) ], 16 ) & ( 1 << bit ) ) >> bit
 
-  rv['dBit 7'] = binVal[ 0 ]
-  rv['dBit 6'] = bit6
-  rv['dBit 5'] = bit5
-  rv['dBit 4'] = bit4
-  rv['dBit 3'] = bit3
-  rv['dBit 2'] = bit2
-  rv['dBit 1'] = bit1
-  rv['dBit 0'] = bit0
-  rv['dBit 15'] = bit15
-  rv['dBit 14'] = bit14
-  rv['dBit 13'] = bit13
+  rv['dBit 7'] = b7
+  rv['dBit 6'] = b6
+  rv['dBit 5'] = b5
+  rv['dBit 4'] = b4
+  rv['dBit 3'] = b3
+  rv['dBit 2'] = b2
+  rv['dBit 1'] = b1
+  rv['dBit 0'] = b0
+  rv['dBit 15'] = b15
+  rv['dBit 14'] = b14
+  rv['dBit 13'] = b13
 
   return rv
 
