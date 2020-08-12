@@ -113,19 +113,28 @@ def decodeCTRETalonStatus1 ( data ):
   b7 = int( binVal[ 0 ], 2 )
 
   # Bit 13
-  b13 = b13 ^ ( b12 & b16 )
+  b13 = b13 ^ ( ( b12            & flipBit( b11 ) & b17            & b16            ) | 
+                ( b12            & flipBit( b11 ) & flipBit( b17 ) & b16            ) | 
+                ( b12            & b11            & b17            & flipBit( b16 ) ) | 
+                ( flipBit( b12 ) & flipBit( b11 ) & flipBit( b17 ) & flipBit( b16 ) ) |
+                ( flipBit( b12 ) & b11            & b17            & flipBit( b16 ) ) ) 
 
   # Bit 14
-  b14 = b14 ^ ( flipBit( b11 ) & flipBit( b19 ) & flipBit( b18 ) & flipBit( b17 ) )
+  b14 = b14 ^ ( ( flipBit( b12 ) & flipBit( b11 ) & b18            & b16            ) | 
+                ( b12            & flipBit( b11 ) & flipBit( b18 ) & b16            ) | 
+                ( b12            & b11            & b18            & flipBit( b16 ) ) | 
+                ( flipBit( b12 ) & b11            & flipBit( b18 ) & b16            ) ) 
 
   # Bit 15
-  b15 = flipBit( b15 ^ b18 )
+  b15 = b15 ^ ( ( b12            & flipBit( b19 ) & flipBit( b18 ) ) |
+                ( flipBit( b12 ) & flipBit( b19 ) & b18            ) |
+                ( flipBit( b12 ) & flipBit( b19 ) & flipBit( b18 ) ) )
 
   # Bit 0 is inverted
-  b0 = flipBit( b0 )
+  b0 = b0 ^ ( ( flipBit( b18 ) & flipBit( b19 ) ) | ( flipBit( b18 ) & b19 ) | ( b18 & flipBit( b19 ) ) )
 
-  # Bit 1 = bit11 XOR bit 19 XOR bit 1
-  b1 = b1 ^ ( b19 ^ b11 ) 
+  # Bit 1 
+  b1 = b1 ^ flipBit( b12 & flipBit( b11 ) )
   
   # Bit 2 = bit 2 XOR bit 11
   b2 =  b2 ^ b11
@@ -147,7 +156,7 @@ def decodeCTRETalonStatus1 ( data ):
   rv['Output (%)'] = twosComp( int( updatedBinVal, 2 ), 11 )
   # Scale to +-100.0
   rv['Output (%)'] *= ( 100.0 / 1023.0 )
-  rv['raw input'] = twosComp( int( binVal, 2 ), 11 )
+  rv['raw input'] = int( binVal, 2 )
 
   # All frames output all individual bits
   for byte in range( 8 ):
