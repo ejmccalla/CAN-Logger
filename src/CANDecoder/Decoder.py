@@ -120,18 +120,25 @@ def decodeCTRETalonStatus1 ( data ):
                 ( flipBit( b12 ) & b11            & b17            & flipBit( b16 ) ) ) 
 
   # Bit 14
-  b14 = b14 ^ ( ( flipBit( b12 ) & flipBit( b11 ) & b18            & b16            ) | 
-                ( b12            & flipBit( b11 ) & flipBit( b18 ) & b16            ) | 
-                ( b12            & b11            & b18            & flipBit( b16 ) ) | 
-                ( flipBit( b12 ) & b11            & flipBit( b18 ) & b16            ) ) 
+  b14 = b14 ^ ( ( flipBit( b12 ) & flipBit( b11 ) & b18            & b17            ) | 
+                ( flipBit( b12 ) & b11            & b18            & flipBit( b17 ) ) | 
+                ( b12            & flipBit( b11 ) & flipBit( b18 ) & flipBit( b17 ) ) | 
+                ( b12            & b11            & b18            & b17            ) |
+                ( flipBit( b12 ) & b11            & flipBit( b18 ) & flipBit( b17 ) ) ) 
 
   # Bit 15
-  b15 = b15 ^ ( ( b12            & flipBit( b19 ) & flipBit( b18 ) ) |
-                ( flipBit( b12 ) & flipBit( b19 ) & b18            ) |
-                ( flipBit( b12 ) & flipBit( b19 ) & flipBit( b18 ) ) )
+  b15 = b15 ^ ( ( b12            & flipBit( b11 ) & flipBit( b19 ) & flipBit( b18 ) ) |
+                ( flipBit( b12 ) & b11            & flipBit( b19 ) & flipBit( b18 ) ) |
+                ( flipBit( b12 ) & flipBit( b11 ) & flipBit( b19 ) & b18          ) )
 
-  # Bit 0 is inverted
-  b0 = b0 ^ ( ( flipBit( b18 ) & flipBit( b19 ) ) | ( flipBit( b18 ) & b19 ) | ( b18 & flipBit( b19 ) ) )
+  # Bit 0 
+  b0 = b0 ^ ( ( b12            & flipBit( b11 ) & flipBit( b19 ) & flipBit( b16 ) ) |
+              ( b12            & flipBit( b11 ) & flipBit( b19 ) & b16            ) |
+              ( b12            & b11            & flipBit( b19 ) & flipBit( b16 ) ) |
+              ( flipBit( b12 ) & flipBit( b11 ) & b19            & b16            ) |
+              ( flipBit( b12 ) & b11            & flipBit( b19 ) & b16            ) |
+              ( flipBit( b12 ) & flipBit( b11 ) & b19            & flipBit( b16 ) ) |
+              ( flipBit( b12 ) & b11            & flipBit( b19 ) & flipBit( b16 ) ) )
 
   # Bit 1 
   b1 = b1 ^ flipBit( b12 & flipBit( b11 ) )
